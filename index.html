@@ -8,28 +8,86 @@
     body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
-    pre { white-space: pre-wrap; }
+    .panel { margin-top: 1.25rem; padding: 1rem; border: 1px solid #ccc; border-radius: 6px; }
+    .panel--alert { border-color: #c90; background: #fff8e6; }
+    .panel--error { border-color: #c33; background: #fff0f0; }
+    .label { font-size: .875rem; color: #555; margin-bottom: .25rem; }
+    .draft { white-space: pre-wrap; margin: 0; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <h1>Входящие заявки</h1>
   <form>
     <label for="message">Текст заявки</label>
-    <textarea id="message" rows="4"></textarea>
+    <textarea id="message" rows="4" required></textarea>
     <button type="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+
+  <section id="success" class="panel" hidden>
+    <p class="label">Тема</p>
+    <p id="topic"></p>
+    <p class="label">Черновик ответа</p>
+    <pre id="draft" class="draft"></pre>
+  </section>
+
+  <section id="manual" class="panel panel--alert" hidden>
+    <p><strong>Нужен ручной разбор.</strong> Автоматический помощник не смог подготовить ответ. Прочитайте заявку и ответьте клиенту сами.</p>
+  </section>
+
+  <section id="invalid" class="panel panel--error" hidden>
+    <p>Введите непустой текст заявки.</p>
+  </section>
+
   <script type="module">
     const form = document.querySelector("form");
-    const result = document.querySelector("#result");
+    const success = document.querySelector("#success");
+    const manual = document.querySelector("#manual");
+    const invalid = document.querySelector("#invalid");
+    const topicEl = document.querySelector("#topic");
+    const draftEl = document.querySelector("#draft");
+
+    const TOPIC_LABELS = {
+      delivery: "Доставка",
+      pricing: "Цены",
+      other: "Прочее",
+    };
+
+    function hideAll() {
+      success.hidden = true;
+      manual.hidden = true;
+      invalid.hidden = true;
+      topicEl.textContent = "";
+      draftEl.textContent = "";
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const text = document.querySelector("#message").value;
+      hideAll();
+
       const reply = await fetch("/api/triage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
+        body: JSON.stringify({ text }),
       });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      const data = await reply.json();
+
+      if (data.status === "ready") {
+        topicEl.textContent = TOPIC_LABELS[data.topic] ?? data.topic;
+        draftEl.textContent = data.draft;
+        success.hidden = false;
+        return;
+      }
+
+      if (data.status === "manual_review") {
+        manual.hidden = false;
+        return;
+      }
+
+      if (data.status === "invalid_input") {
+        invalid.hidden = false;
+      }
     });
   </script>
 </body>
